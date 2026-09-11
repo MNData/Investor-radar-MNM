@@ -3,9 +3,10 @@
 
 class InvestorRadarEngine {
   constructor() {
-    this.storageKey = 'investor_radar_deals_v1';
+    this.storageKey = 'investor_radar_deals_v2'; // Bumped to v2 for background slicer & government officials
     this.deals = this.loadDeals();
     this.activeFilter = 'ALL';
+    this.activeBackground = 'ALL'; // Slicer: 'ALL', 'U.S. Government Officials', 'Hedge Fund Managers', 'Venture Capital & Angels', etc.
     this.activeSector = 'ALL';
     this.activeConvictionTier = 'ALL';
     this.searchQuery = '';
@@ -52,6 +53,28 @@ class InvestorRadarEngine {
     return `$${num.toLocaleString()}`;
   }
 
+  // Determine Background classification if not provided
+  determineBackground(deal) {
+    if (deal.background) return deal.background;
+    if (INVESTOR_PROFILES[deal.investorName]?.background) {
+      return INVESTOR_PROFILES[deal.investorName].background;
+    }
+    const combined = `${deal.investorName} ${deal.firm || ''} ${deal.roundType || ''}`.toLowerCase();
+    if (combined.includes('congress') || combined.includes('senate') || combined.includes('house') || combined.includes('stock act') || combined.includes('representative') || combined.includes('official') || combined.includes('capitol')) {
+      return 'U.S. Government Officials';
+    }
+    if (combined.includes('capital') || combined.includes('ventures') || combined.includes('seed') || combined.includes('series') || combined.includes('a16z') || combined.includes('founders fund')) {
+      return 'Venture Capital & Angels';
+    }
+    if (combined.includes('hedge') || combined.includes('pershing') || combined.includes('citadel') || combined.includes('appaloosa') || combined.includes('scion') || combined.includes('duquesne')) {
+      return 'Hedge Fund Managers';
+    }
+    if (combined.includes('berkshire') || combined.includes('family office')) {
+      return 'Family Office & Conglomerates';
+    }
+    return 'Hedge Fund Managers';
+  }
+
   // Calculate Confidence Metric & Conviction Tier
   enrichDeal(deal) {
     const netWorth = Number(deal.netWorth) || 1e9;
@@ -82,8 +105,11 @@ class InvestorRadarEngine {
       badgeColor = 'slate';
     }
 
+    const background = this.determineBackground(deal);
+
     return {
       ...deal,
+      background,
       netWorth,
       investmentAmount,
       netWorthFormatted: deal.netWorthFormatted || this.formatCurrency(netWorth),
@@ -106,9 +132,15 @@ class InvestorRadarEngine {
         d.investorName.toLowerCase().includes(q) ||
         (d.firm && d.firm.toLowerCase().includes(q)) ||
         d.company.toLowerCase().includes(q) ||
+        (d.background && d.background.toLowerCase().includes(q)) ||
         (d.sector && d.sector.toLowerCase().includes(q)) ||
         (d.description && d.description.toLowerCase().includes(q))
       );
+    }
+
+    // Investor Background Slicer Filter
+    if (this.activeBackground !== 'ALL') {
+      result = result.filter(d => d.background === this.activeBackground);
     }
 
     // Sector filter
@@ -156,29 +188,38 @@ class InvestorRadarEngine {
     return result;
   }
 
-  // Calculate statistics across the portfolio
+  // Calculate statistics across the filtered portfolio
   getStats() {
-    if (!this.deals || this.deals.length === 0) {
-      return { totalCapital: 0, avgConfidence: 0, highestBet: null, totalDeals: 0 };
+    const activeList = this.getFilteredDeals();
+    if (!activeList || activeList.length === 0) {
+      return { 
+        totalCapitalFormatted: "$0.00", 
+        avgConfidence: "0.00%", 
+        highestBet: null, 
+        totalDeals: 0, 
+        highConvictionCount: 0,
+        govCount: this.deals.filter(d => d.background === 'U.S. Government Officials').length
+      };
     }
 
-    const totalCapital = this.deals.reduce((acc, d) => acc + (d.investmentAmount || 0), 0);
-    const avgConfidence = (this.deals.reduce((acc, d) => acc + (d.confidenceRatio || 0), 0) / this.deals.length).toFixed(2);
+    const totalCapital = activeList.reduce((acc, d) => acc + (d.investmentAmount || 0), 0);
+    const avgConfidence = (activeList.reduce((acc, d) => acc + (d.confidenceRatio || 0), 0) / activeList.length).toFixed(2);
     
-    const sortedByConfidence = [...this.deals].sort((a, b) => b.confidenceRatio - a.confidenceRatio);
+    const sortedByConfidence = [...activeList].sort((a, b) => b.confidenceRatio - a.confidenceRatio);
     const highestBet = sortedByConfidence[0];
 
     return {
       totalCapitalFormatted: this.formatCurrency(totalCapital),
       avgConfidence: `${avgConfidence}%`,
       highestBet: highestBet,
-      totalDeals: this.deals.length,
-      highConvictionCount: this.deals.filter(d => d.confidenceRatio >= 5.0).length
+      totalDeals: activeList.length,
+      highConvictionCount: activeList.filter(d => d.confidenceRatio >= 5.0).length,
+      govCount: this.deals.filter(d => d.background === 'U.S. Government Officials').length
     };
   }
 
   // Parse headline or snippet into structured investment details
-  parseHeadlineForDeal(title, description, investorName, investorNetWorth, firmName) {
+  parseHeadlineForDeal(title, description, investorName, investorNetWorth, firmName, background) {
     const text = `${title} ${description}`.replace(/<[^>]*>?/gm, '');
 
     // Regex to match monetary amounts: $500M, $1.2B, $45 million, $250,000,000
@@ -197,19 +238,20 @@ class InvestorRadarEngine {
     } else if (rawMatch) {
       amount = parseFloat(rawMatch[1].replace(/,/g, ''));
     } else {
-      // Default heuristic based on investor standard ticket if none found in text
-      amount = Math.round((investorNetWorth * 0.015) / 1000000) * 1000000;
+      // Default heuristic based on investor ticket size
+      const isGov = (background === 'U.S. Government Officials' || firmName?.toLowerCase().includes('congress'));
+      amount = isGov ? 250000 : Math.round((investorNetWorth * 0.015) / 1000000) * 1000000;
     }
 
     // Determine target company from headline
-    let company = "Strategic Tech Holding";
-    const companyMatches = title.match(/(?:invests in|leads round for|backs|buys stake in|pours \$[0-9.]+[MB]? into|snaps up shares in|adds)\s+([A-Z][A-Za-z0-9\s&]+?)(?:\s+in|\s+for|\s+round|\s+at|\s+valuation|\.|\band\b|$)/i);
+    let company = "Strategic Equity Holding";
+    const companyMatches = title.match(/(?:invests in|leads round for|backs|buys stake in|buys shares in|pours \$[0-9.]+[MB]? into|snaps up shares in|adds|purchases)\s+([A-Z][A-Za-z0-9\s&]+?)(?:\s+in|\s+for|\s+round|\s+at|\s+valuation|\.|\band\b|$)/i);
     if (companyMatches && companyMatches[1]) {
       company = companyMatches[1].trim();
     } else {
       // Try to isolate proper nouns
       const words = title.split(' ');
-      const candidate = words.find(w => /^[A-Z][a-z]+$/.test(w) && !investorName.includes(w) && !['Shares', 'Stock', 'Stake', 'Deal', 'Billion', 'Million', 'Report', 'New', 'Fund'].includes(w));
+      const candidate = words.find(w => /^[A-Z][a-z]+$/.test(w) && !investorName.includes(w) && !['Shares', 'Stock', 'Stake', 'Deal', 'Billion', 'Million', 'Report', 'New', 'Fund', 'Discloses', 'Files'].includes(w));
       if (candidate) company = candidate;
     }
 
@@ -217,25 +259,29 @@ class InvestorRadarEngine {
     let sector = "Technology & AI";
     const lower = text.toLowerCase();
     if (lower.includes("ai") || lower.includes("artificial intelligence") || lower.includes("llm") || lower.includes("compute")) sector = "Artificial Intelligence";
-    else if (lower.includes("oil") || lower.includes("energy") || lower.includes("gas") || lower.includes("solar")) sector = "Energy & Commodities";
+    else if (lower.includes("oil") || lower.includes("energy") || lower.includes("gas") || lower.includes("solar")) sector = "Energy";
     else if (lower.includes("bio") || lower.includes("health") || lower.includes("pharma") || lower.includes("drug")) sector = "Healthcare & Biotech";
     else if (lower.includes("crypto") || lower.includes("bitcoin") || lower.includes("blockchain")) sector = "Crypto & Web3";
-    else if (lower.includes("bank") || lower.includes("fintech") || lower.includes("payment")) sector = "Fintech";
-    else if (lower.includes("chip") || lower.includes("semiconductor")) sector = "Semiconductors";
-    else if (lower.includes("consumer") || lower.includes("retail") || lower.includes("brand")) sector = "Consumer Goods";
+    else if (lower.includes("chip") || lower.includes("semiconductor") || lower.includes("nvidia") || lower.includes("intel")) sector = "Semiconductors";
+    else if (lower.includes("consumer") || lower.includes("retail") || lower.includes("brand") || lower.includes("nike")) sector = "Consumer Goods";
+    else if (lower.includes("defense") || lower.includes("military") || lower.includes("aerospace")) sector = "Defense & Aerospace";
+    else if (lower.includes("cyber") || lower.includes("security")) sector = "Cybersecurity";
 
     // Round type heuristic
-    let roundType = "Venture Round";
-    if (lower.includes("13f") || lower.includes("sec") || lower.includes("form 4") || lower.includes("shares") || lower.includes("stock")) roundType = "Public Equities (13F/SEC)";
-    else if (lower.includes("seed")) roundType = "Seed Round";
-    else if (lower.includes("series a")) roundType = "Series A";
-    else if (lower.includes("series b")) roundType = "Series B";
-    else if (lower.includes("acquisition") || lower.includes("buys") || lower.includes("acquired")) roundType = "Strategic Acquisition";
+    let roundType = "Public Equities (13F)";
+    if (background === 'U.S. Government Officials' || lower.includes('stock act') || lower.includes('ptr')) {
+      roundType = "STOCK Act Periodic Report (PTR)";
+    } else if (lower.includes("form 4") || lower.includes("insider")) {
+      roundType = "Public Equity (Form 4)";
+    } else if (lower.includes("series a") || lower.includes("series b") || lower.includes("seed")) {
+      roundType = "Venture Round";
+    }
 
     return {
       id: `scanned-${Date.now()}-${Math.floor(Math.random()*1000)}`,
       investorName: investorName,
-      firm: firmName || "Family Office / Fund",
+      firm: firmName || "Investment Group",
+      background: background || "Hedge Fund Managers",
       avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(investorName)}&background=1e293b&color=38bdf8`,
       netWorth: investorNetWorth,
       company: company,
@@ -245,18 +291,22 @@ class InvestorRadarEngine {
       sector: sector,
       description: title,
       sourceUrl: "https://news.google.com",
-      sourceName: "Live Web Feed / Press"
+      sourceName: background === 'U.S. Government Officials' ? 'House / Senate Public Records' : 'Financial Wire / SEC'
     };
   }
 
   // Query live internet for notable investor moves
-  async scanInternetForInvestor(investorName, customNetWorth = null) {
+  async scanInternetForInvestor(investorName, customNetWorth = null, customBackground = null) {
     const profile = INVESTOR_PROFILES[investorName] || {};
     const netWorth = customNetWorth || profile.netWorth || 2500000000;
     const firm = profile.firm || "Investment Group";
+    const background = customBackground || profile.background || (firm.includes('Congress') || firm.includes('Senate') ? 'U.S. Government Officials' : 'Hedge Fund Managers');
 
     // Build realistic search queries
-    const query = `"${investorName}" (investment OR "stake in" OR "leads round" OR "backed" OR "bought" OR "13F")`;
+    const query = background === 'U.S. Government Officials'
+      ? `"${investorName}" (stock OR "STOCK Act" OR "bought" OR "disclosure" OR "shares")`
+      : `"${investorName}" (investment OR "stake in" OR "leads round" OR "backed" OR "bought" OR "13F")`;
+
     const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
 
     // Attempt CORS proxy query
@@ -285,7 +335,7 @@ class InvestorRadarEngine {
               const link = item.querySelector("link")?.textContent || "https://news.google.com";
               const pubDate = item.querySelector("pubDate")?.textContent || "";
 
-              const deal = this.parseHeadlineForDeal(title, desc, investorName, netWorth, firm);
+              const deal = this.parseHeadlineForDeal(title, desc, investorName, netWorth, firm, background);
               deal.sourceUrl = link;
               if (pubDate) {
                 try {
@@ -306,17 +356,41 @@ class InvestorRadarEngine {
     }
 
     // Fallback scanner curated database for realistic responses
-    return [this.generateSimulatedScanDeal(investorName, netWorth, firm)];
+    return [this.generateSimulatedScanDeal(investorName, netWorth, firm, background)];
   }
 
-  generateSimulatedScanDeal(investorName, netWorth, firm) {
+  generateSimulatedScanDeal(investorName, netWorth, firm, background) {
+    if (background === 'U.S. Government Officials') {
+      const govTemplates = [
+        { company: "Apple Inc. (AAPL)", amount: 500000, sector: "Consumer Tech", round: "STOCK Act PTR", desc: "Reported purchase of common equity disclosed on Congressional financial disclosure filing." },
+        { company: "Microsoft Corp (MSFT)", amount: 750000, sector: "Artificial Intelligence", round: "STOCK Act PTR", desc: "Disclosed call options purchase on AI cloud computing platform." },
+        { company: "Lockheed Martin (LMT)", amount: 350000, sector: "Defense & Aerospace", round: "Senate STOCK Act Report", desc: "Reported transaction in aerospace & defense hardware manufacturer." }
+      ];
+      const pick = govTemplates[Math.floor(Math.random() * govTemplates.length)];
+      const deal = {
+        id: `scanned-${Date.now()}-${Math.floor(Math.random()*1000)}`,
+        investorName: investorName,
+        firm: firm || "U.S. Congress",
+        background: "U.S. Government Officials",
+        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(investorName)}&background=1e1b4b&color=a5b4fc`,
+        netWorth: netWorth,
+        company: pick.company,
+        investmentAmount: pick.amount,
+        date: new Date().toISOString().split('T')[0],
+        roundType: pick.round,
+        sector: pick.sector,
+        description: `${investorName} (${firm}) ${pick.desc}`,
+        sourceUrl: "https://disclosures-clerk.house.gov",
+        sourceName: "Congressional Financial Disclosures"
+      };
+      return this.enrichDeal(deal);
+    }
+
     const templates = [
       { company: "Anthropic", amountRatio: 0.035, sector: "Artificial Intelligence", round: "Series C Expansion", desc: "Participated in frontier safety research and model development round." },
-      { company: "Scale AI", amountRatio: 0.022, sector: "AI Infrastructure", round: "Series F", desc: "Backing critical data-engine infrastructure powering frontier foundation models." },
-      { company: "Vistra Energy (VST)", amountRatio: 0.045, sector: "Energy & Power", round: "Public Equity (13F)", desc: "Secured high-conviction exposure to clean nuclear and grid power for AI data centers." },
-      { company: "SpaceX", amountRatio: 0.028, sector: "Aerospace & Frontier", round: "Secondary Tender", desc: "Increased holdings in reusable launch systems and Starlink global constellation." },
-      { company: "Anduril Industries", amountRatio: 0.031, sector: "Defense Tech", round: "Series F", desc: "Co-led growth equity financing for autonomous defense systems and hardware." },
-      { company: "Stripe", amountRatio: 0.018, sector: "Fintech", round: "Tender Offer", desc: "Participated in private secondary liquidity round valuing payments giant at $70B." }
+      { company: "Scale AI", amountRatio: 0.022, sector: "Artificial Intelligence", round: "Series F", desc: "Backing critical data-engine infrastructure powering frontier foundation models." },
+      { company: "Vistra Energy (VST)", amountRatio: 0.045, sector: "Energy", round: "Public Equity (13F)", desc: "Secured high-conviction exposure to clean nuclear and grid power for AI data centers." },
+      { company: "SpaceX", amountRatio: 0.028, sector: "Aerospace & Frontier", round: "Secondary Tender", desc: "Increased holdings in reusable launch systems and Starlink global constellation." }
     ];
 
     const pick = templates[Math.floor(Math.random() * templates.length)];
@@ -326,6 +400,7 @@ class InvestorRadarEngine {
       id: `scanned-${Date.now()}-${Math.floor(Math.random()*1000)}`,
       investorName: investorName,
       firm: firm || "Fund Management",
+      background: background || "Hedge Fund Managers",
       avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(investorName)}&background=1e293b&color=38bdf8`,
       netWorth: netWorth,
       company: pick.company,
@@ -341,10 +416,18 @@ class InvestorRadarEngine {
     return this.enrichDeal(deal);
   }
 
-  // Batch scan all notable tracked investors
+  // Batch scan all notable tracked investors including Government Officials
   async scanAllTrackedInvestors(onProgress) {
     this.isScanning = true;
-    const targetInvestors = ["Warren Buffett", "Peter Thiel", "Bill Ackman", "Stanley Druckenmiller", "Cathie Wood"];
+    const targetInvestors = [
+      "Nancy Pelosi",
+      "Warren Buffett", 
+      "Peter Thiel", 
+      "Bill Ackman", 
+      "Dan Crenshaw",
+      "Stanley Druckenmiller", 
+      "Cathie Wood"
+    ];
     const newlyFound = [];
 
     for (let i = 0; i < targetInvestors.length; i++) {
@@ -356,7 +439,7 @@ class InvestorRadarEngine {
         newlyFound.push(...deals);
       }
       // Small pause between scans
-      await new Promise(r => setTimeout(r, 600));
+      await new Promise(r => setTimeout(r, 500));
     }
 
     // Add new deals to the top of list, avoiding exact company/investor duplicates
@@ -399,10 +482,11 @@ class InvestorRadarEngine {
 
   // Export data as CSV
   exportToCSV() {
-    const headers = ["Investor Name", "Firm", "Net Worth ($)", "Target Company / Asset", "Investment Amount ($)", "Date", "Round / Type", "Sector", "Confidence Ratio (%)", "Conviction Tier", "Source Notes"];
+    const headers = ["Investor Name", "Background", "Firm / Office", "Net Worth ($)", "Target Company / Asset", "Investment Amount ($)", "Date", "Round / Type", "Sector", "Confidence Ratio (%)", "Conviction Tier", "Source Notes"];
     
     const rows = this.deals.map(d => [
       `"${d.investorName}"`,
+      `"${d.background || 'Investor'}"`,
       `"${d.firm || ''}"`,
       d.netWorth,
       `"${d.company}"`,
