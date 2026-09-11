@@ -3,7 +3,7 @@
 
 class InvestorRadarEngine {
   constructor() {
-    this.storageKey = 'investor_radar_deals_v2'; // Bumped to v2 for background slicer & government officials
+    this.storageKey = 'investor_radar_deals_v2026'; // Fresh 2025-2026 dataset
     this.deals = this.loadDeals();
     this.activeFilter = 'ALL';
     this.activeBackground = 'ALL'; // Slicer: 'ALL', 'U.S. Government Officials', 'Hedge Fund Managers', 'Venture Capital & Angels', etc.
