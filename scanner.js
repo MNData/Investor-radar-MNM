@@ -1,3 +1,4 @@
+// © 2026 Morghan James Nunn-Menson. All Rights Reserved.
 // Scanner & Logic Engine for Notable Investor Investment Radar
 // Calculates: Confidence Ratio = (Investment Amount / Net Worth) * 100%
 

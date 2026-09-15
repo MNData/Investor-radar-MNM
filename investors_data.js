@@ -1,3 +1,4 @@
+// © 2026 Morghan James Nunn-Menson. All Rights Reserved.
 // Verified 2025 - 2026 Dataset of Notable Investors & U.S. Government Officials
 // Sources: Latest SEC Form 13F (Q2 2026), House/Senate STOCK Act PTRs (2025-2026), and venture rounds.
 // Formula: Confidence = (Investment Amount / Net Worth) * 100%

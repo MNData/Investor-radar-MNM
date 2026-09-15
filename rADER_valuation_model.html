@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<!-- © 2026 Morghan James Nunn-Menson. All Rights Reserved. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>rADER Valuation Model</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #060b14;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+    header {
+      background: linear-gradient(135deg, #0a1628 0%, #0f2044 100%);
+      border-bottom: 1px solid #1e3a5f;
+      padding: 24px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 {
+      font-size: 1.8rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+    header h1 span { color: #f59e0b; }
+    header p { font-size: 0.8rem; color: #64748b; margin-top: 4px; }
+    .badge {
+      background: #1e3a5f;
+      border: 1px solid #2563eb;
+      color: #60a5fa;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 32px 24px;
+      display: grid;
+      grid-template-columns: 400px 1fr;
+      gap: 24px;
+    }
+    .panel {
+      background: #0d1929;
+      border: 1px solid #1e3a5f;
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .panel h2 {
+      font-size: 0.85rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #f59e0b;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #1e3a5f;
+    }
+    .input-group { margin-bottom: 18px; }
+    .input-group label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.82rem;
+      color: #94a3b8;
+      margin-bottom: 6px;
+    }
+    .input-group label span {
+      color: #f59e0b;
+      font-weight: 700;
+      font-size: 0.85rem;
+    }
+    input[type=range] {
+      width: 100%;
+      -webkit-appearance: none;
+      height: 4px;
+      border-radius: 2px;
+      background: #1e3a5f;
+      outline: none;
+      cursor: pointer;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #f59e0b;
+      cursor: pointer;
+    }
+    .number-input {
+      width: 100%;
+      background: #060b14;
+      border: 1px solid #1e3a5f;
+      border-radius: 6px;
+      color: #e2e8f0;
+      padding: 6px 10px;
+      font-size: 0.85rem;
+      margin-top: 6px;
+    }
+    .number-input:focus { outline: none; border-color: #f59e0b; }
+    .right-col { display: flex; flex-direction: column; gap: 24px; }
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    .metric-card {
+      background: #0d1929;
+      border: 1px solid #1e3a5f;
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+      transition: border-color 0.2s;
+    }
+    .metric-card:hover { border-color: #f59e0b; }
+    .metric-card .label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #64748b;
+      margin-bottom: 8px;
+    }
+    .metric-card .value {
+      font-size: 1.6rem;
+      font-weight: 800;
+      color: #f59e0b;
+      line-height: 1;
+    }
+    .metric-card .sub { font-size: 0.72rem; color: #475569; margin-top: 4px; }
+    .metric-card.highlight { border-color: #f59e0b; background: #1a1000; }
+    .metric-card.highlight .value { color: #fbbf24; font-size: 2rem; }
+    .verdict-bar {
+      background: #0d1929;
+      border: 1px solid #1e3a5f;
+      border-radius: 12px;
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .verdict-dot {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .verdict-text { font-size: 1rem; font-weight: 700; }
+    .verdict-sub { font-size: 0.8rem; color: #64748b; margin-top: 2px; }
+    .chart-panel {
+      background: #0d1929;
+      border: 1px solid #1e3a5f;
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .chart-panel h2 {
+      font-size: 0.85rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #f59e0b;
+      margin-bottom: 16px;
+    }
+    footer {
+      text-align: center;
+      padding: 24px;
+      color: #334155;
+      font-size: 0.75rem;
+      border-top: 1px solid #0d1929;
+      margin-top: 8px;
+    }
+    .section-divider {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #334155;
+      margin: 16px 0 10px;
+      border-top: 1px solid #1e3a5f;
+      padding-top: 14px;
+    }
+    @media (max-width: 900px) {
+      .container { grid-template-columns: 1fr; }
+      .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>r<span>ADER</span> Valuation Model</h1>
+    <p>© 2026 Morghan James Nunn-Menson. All Rights Reserved. — CONFIDENTIAL</p>
+  </div>
+  <div class="badge">?? Private & Confidential</div>
+</header>
+
+<div class="container">
+  <!-- LEFT: Inputs -->
+  <div>
+    <div class="panel">
+      <h2>?? Revenue Inputs</h2>
+
+      <div class="input-group">
+        <label>Monthly Recurring Revenue (MRR) <span id="lbl-mrr">£5,000</span></label>
+        <input type="range" id="mrr" min="0" max="500000" step="500" value="5000">
+        <input type="number" class="number-input" id="mrr-num" value="5000">
+      </div>
+      <div class="input-group">
+        <label>Annual Growth Rate <span id="lbl-growth">80%</span></label>
+        <input type="range" id="growth" min="0" max="300" step="1" value="80">
+        <input type="number" class="number-input" id="growth-num" value="80">
+      </div>
+      <div class="input-group">
+        <label>Gross Margin <span id="lbl-margin">75%</span></label>
+        <input type="range" id="margin" min="0" max="100" step="1" value="75">
+        <input type="number" class="number-input" id="margin-num" value="75">
+      </div>
+
+      <div class="section-divider">?? User Metrics</div>
+
+      <div class="input-group">
+        <label>Monthly Active Users (MAU) <span id="lbl-mau">1,000</span></label>
+        <input type="range" id="mau" min="0" max="100000" step="100" value="1000">
+        <input type="number" class="number-input" id="mau-num" value="1000">
+      </div>
+      <div class="input-group">
+        <label>Monthly Churn Rate <span id="lbl-churn">3%</span></label>
+        <input type="range" id="churn" min="0.1" max="30" step="0.1" value="3">
+        <input type="number" class="number-input" id="churn-num" value="3">
+      </div>
+      <div class="input-group">
+        <label>Customer Acquisition Cost (CAC) <span id="lbl-cac">£25</span></label>
+        <input type="range" id="cac" min="1" max="2000" step="1" value="25">
+        <input type="number" class="number-input" id="cac-num" value="25">
+      </div>
+
+      <div class="section-divider">?? Valuation Parameters</div>
+
+      <div class="input-group">
+        <label>ARR Revenue Multiple <span id="lbl-multiple">10×</span></label>
+        <input type="range" id="multiple" min="1" max="30" step="0.5" value="10">
+        <input type="number" class="number-input" id="multiple-num" value="10">
+      </div>
+      <div class="input-group">
+        <label>DCF Discount Rate <span id="lbl-discount">25%</span></label>
+        <input type="range" id="discount" min="5" max="80" step="1" value="25">
+        <input type="number" class="number-input" id="discount-num" value="25">
+      </div>
+      <div class="input-group">
+        <label>Projection Years <span id="lbl-years">5</span></label>
+        <input type="range" id="years" min="1" max="10" step="1" value="5">
+        <input type="number" class="number-input" id="years-num" value="5">
+      </div>
+      <div class="input-group">
+        <label>Terminal Growth Rate <span id="lbl-tgr">4%</span></label>
+        <input type="range" id="tgr" min="0" max="15" step="0.5" value="4">
+        <input type="number" class="number-input" id="tgr-num" value="4">
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Outputs -->
+  <div class="right-col">
+
+    <!-- Verdict -->
+    <div class="verdict-bar" id="verdict-bar">
+      <div class="verdict-dot" id="verdict-dot"></div>
+      <div>
+        <div class="verdict-text" id="verdict-text"></div>
+        <div class="verdict-sub" id="verdict-sub"></div>
+      </div>
+    </div>
+
+    <!-- Metrics Grid -->
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="label">ARR</div>
+        <div class="value" id="out-arr">—</div>
+        <div class="sub">Annual Recurring Revenue</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">ARPU</div>
+        <div class="value" id="out-arpu">—</div>
+        <div class="sub">Avg Revenue / User / Mo</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">LTV</div>
+        <div class="value" id="out-ltv">—</div>
+        <div class="sub">Lifetime Value / User</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">LTV : CAC</div>
+        <div class="value" id="out-ltvcac">—</div>
+        <div class="sub">Healthy = &gt;3×</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">ARR Multiple Valuation</div>
+        <div class="value" id="out-arrval">—</div>
+        <div class="sub">Revenue × Multiple</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">DCF Valuation</div>
+        <div class="value" id="out-dcf">—</div>
+        <div class="sub">5-year + Terminal Value</div>
+      </div>
+      <div class="metric-card highlight" style="grid-column: span 3">
+        <div class="label">? Blended Valuation</div>
+        <div class="value" id="out-blended">—</div>
+        <div class="sub">Average of ARR Multiple + DCF Methods</div>
+      </div>
+    </div>
+
+    <!-- Chart -->
+    <div class="chart-panel">
+      <h2>?? Revenue Projection</h2>
+      <canvas id="revenueChart" height="180"></canvas>
+    </div>
+
+  </div>
+</div>
+
+<footer>
+  © 2026 Morghan James Nunn-Menson. All Rights Reserved. &nbsp;|&nbsp; rADER Investment App &nbsp;|&nbsp; CONFIDENTIAL — For Private Use Only
+</footer>
+
+<script>
+  const fmt = (n) => {
+    if (n >= 1e9) return '£' + (n/1e9).toFixed(1) + 'B';
+    if (n >= 1e6) return '£' + (n/1e6).toFixed(1) + 'M';
+    if (n >= 1e3) return '£' + (n/1e3).toFixed(1) + 'K';
+    return '£' + n.toFixed(0);
+  };
+  const pct = (n) => n.toFixed(1) + '%';
+  const x = (n) => n.toFixed(1) + '×';
+
+  const inputs = {
+    mrr: { slider: document.getElementById('mrr'), num: document.getElementById('mrr-num'), lbl: document.getElementById('lbl-mrr'), fmt: v => '£' + Number(v).toLocaleString() },
+    growth: { slider: document.getElementById('growth'), num: document.getElementById('growth-num'), lbl: document.getElementById('lbl-growth'), fmt: v => v + '%' },
+    margin: { slider: document.getElementById('margin'), num: document.getElementById('margin-num'), lbl: document.getElementById('lbl-margin'), fmt: v => v + '%' },
+    mau: { slider: document.getElementById('mau'), num: document.getElementById('mau-num'), lbl: document.getElementById('lbl-mau'), fmt: v => Number(v).toLocaleString() },
+    churn: { slider: document.getElementById('churn'), num: document.getElementById('churn-num'), lbl: document.getElementById('lbl-churn'), fmt: v => v + '%' },
+    cac: { slider: document.getElementById('cac'), num: document.getElementById('cac-num'), lbl: document.getElementById('lbl-cac'), fmt: v => '£' + v },
+    multiple: { slider: document.getElementById('multiple'), num: document.getElementById('multiple-num'), lbl: document.getElementById('lbl-multiple'), fmt: v => v + '×' },
+    discount: { slider: document.getElementById('discount'), num: document.getElementById('discount-num'), lbl: document.getElementById('lbl-discount'), fmt: v => v + '%' },
+    years: { slider: document.getElementById('years'), num: document.getElementById('years-num'), lbl: document.getElementById('lbl-years'), fmt: v => v },
+    tgr: { slider: document.getElementById('tgr'), num: document.getElementById('tgr-num'), lbl: document.getElementById('lbl-tgr'), fmt: v => v + '%' },
+  };
+
+  Object.entries(inputs).forEach(([key, inp]) => {
+    inp.slider.addEventListener('input', () => { inp.num.value = inp.slider.value; update(); });
+    inp.num.addEventListener('input', () => { inp.slider.value = inp.num.value; update(); });
+  });
+
+  const get = (key) => parseFloat(inputs[key].slider.value);
+
+  // Chart
+  const ctx = document.getElementById('revenueChart').getContext('2d');
+  const chart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: [],
+      datasets: [{
+        label: 'Projected ARR (£)',
+        data: [],
+        backgroundColor: 'rgba(245,158,11,0.7)',
+        borderColor: '#f59e0b',
+        borderWidth: 1,
+        borderRadius: 4,
+      }, {
+        label: 'Gross Profit (£)',
+        data: [],
+        backgroundColor: 'rgba(59,130,246,0.4)',
+        borderColor: '#3b82f6',
+        borderWidth: 1,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { labels: { color: '#94a3b8', font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: ctx => ' £' + ctx.parsed.y.toLocaleString(undefined, {maximumFractionDigits: 0})
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#64748b' }, grid: { color: '#0d1929' } },
+        y: { ticks: { color: '#64748b', callback: v => fmt(v) }, grid: { color: '#1e293b' } }
+      }
+    }
+  });
+
+  function update() {
+    const mrr = get('mrr');
+    const growth = get('growth') / 100;
+    const margin = get('margin') / 100;
+    const mau = get('mau');
+    const churn = get('churn') / 100;
+    const cac = get('cac');
+    const multiple = get('multiple');
+    const discount = get('discount') / 100;
+    const years = get('years');
+    const tgr = get('tgr') / 100;
+
+    // Update labels
+    Object.entries(inputs).forEach(([key, inp]) => {
+      inp.lbl.textContent = inp.fmt(inp.slider.value);
+    });
+
+    // Core calcs
+    const arr = mrr * 12;
+    const arpu = mau > 0 ? mrr / mau : 0;
+    const ltv = churn > 0 ? (arpu * margin) / churn : 0;
+    const ltvCac = cac > 0 ? ltv / cac : 0;
+    const arrValuation = arr * multiple;
+
+    // DCF
+    let dcfVal = 0;
+    const arrVals = [];
+    const gpVals = [];
+    const labels = [];
+    let runningArr = arr;
+    for (let y = 1; y <= years; y++) {
+      runningArr = arr * Math.pow(1 + growth, y);
+      const fcf = runningArr * margin;
+      dcfVal += fcf / Math.pow(1 + discount, y);
+      arrVals.push(Math.round(runningArr));
+      gpVals.push(Math.round(runningArr * margin));
+      labels.push('Year ' + y);
+    }
+    // Terminal value
+    const terminalFCF = runningArr * margin * (1 + tgr);
+    const terminalVal = discount > tgr ? terminalFCF / (discount - tgr) : 0;
+    dcfVal += terminalVal / Math.pow(1 + discount, years);
+
+    const blended = (arrValuation + dcfVal) / 2;
+
+    // Verdict
+    const verdotEl = document.getElementById('verdict-dot');
+    const vertextEl = document.getElementById('verdict-text');
+    const versubEl = document.getElementById('verdict-sub');
+    if (arr < 120000) {
+      verdotEl.style.background = '#64748b';
+      vertextEl.textContent = '?? Pre-Revenue / Early Stage';
+      versubEl.textContent = 'Focus on product-market fit and first paying customers';
+    } else if (arr < 1000000) {
+      verdotEl.style.background = '#3b82f6';
+      vertextEl.textContent = '?? Early Growth Stage';
+      versubEl.textContent = 'Building traction — ready for Friends & Family or Angel round';
+    } else if (arr < 5000000) {
+      verdotEl.style.background = '#f59e0b';
+      vertextEl.textContent = '?? Growth Stage';
+      versubEl.textContent = 'Strong traction — ready for Seed or Series A conversations';
+    } else {
+      verdotEl.style.background = '#22c55e';
+      vertextEl.textContent = '? Scale Stage';
+      versubEl.textContent = 'Scaling — institutional investors and Series B+ territory';
+    }
+
+    // Outputs
+    document.getElementById('out-arr').textContent = fmt(arr);
+    document.getElementById('out-arpu').textContent = mau > 0 ? fmt(arpu) : '—';
+    document.getElementById('out-ltv').textContent = ltv > 0 ? fmt(ltv) : '—';
+    document.getElementById('out-ltvcac').textContent = ltvCac > 0 ? x(ltvCac) : '—';
+    document.getElementById('out-arrval').textContent = fmt(arrValuation);
+    document.getElementById('out-dcf').textContent = fmt(dcfVal);
+    document.getElementById('out-blended').textContent = fmt(blended);
+
+    // Chart
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = arrVals;
+    chart.data.datasets[1].data = gpVals;
+    chart.update();
+  }
+
+  update();
+</script>
+</body>
+</html>
